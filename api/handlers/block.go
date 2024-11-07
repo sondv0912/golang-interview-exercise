@@ -8,32 +8,34 @@ import (
 
 	"golang-interview-exercise/utils"
 
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/labstack/echo/v4"
 )
 
 func GetCurrentBlock(c echo.Context) error {
-    client, err := ethclient.Dial("https://mainnet.infura.io/v3/afd3d007db6f48fb946468a2877b5151")
+	client, err := utils.InitEthereumClient()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error initializing Ethereum client: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Unable to connect to Ethereum client")
 	}
 
-	// Lấy block mới nhất
 	blockNumber, err := client.BlockNumber(context.Background())
 	if err != nil {
-        return echo.NewHTTPError(400, err)
-    }
+		return echo.NewHTTPError(http.StatusBadRequest, "Failed to retrieve latest block number")
+	}
 
-    block, err :=  utils.ParseBlock(client, big.NewInt(int64(blockNumber)))
-    if err != nil {
-        return echo.NewHTTPError(400, err)
-    }
+	block, err := utils.GetBlockByBlockNumber(client, big.NewInt(int64(blockNumber)))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Failed to retrieve block data")
+	}
 
-    blockData := map[string]interface{}{
-        "block_number": blockNumber,
-        "block_info": block,
-    }
+	transaction := block.Transactions()
+	transactionCount := len(transaction)
 
-    // Trả về dữ liệu dưới dạng JSON
-    return c.JSON(http.StatusOK, blockData)
+	blockData := map[string]interface{}{
+		"block_number":      blockNumber,
+		"transaction_count": transactionCount,
+		"transaction":       transaction,
+	}
+
+	return c.JSON(http.StatusOK, blockData)
 }

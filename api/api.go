@@ -8,7 +8,7 @@ import (
 
 func RegisterAPI(e *echo.Echo) error {
 	e.GET("/block", handlers.GetCurrentBlock)
-	e.GET("/subscribe", handlers.GetSubscribe)
+	e.POST("/subscribe", handlers.PostSubscribe)
 	e.GET("/transaction", handlers.GetTransaction)
 
 	return nil
