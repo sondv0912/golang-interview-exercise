@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"golang-interview-exercise/api/transactions"
+	"golang-interview-exercise/database/mongodb"
+	"golang-interview-exercise/ethereum"
+	"golang-interview-exercise/utils/context_utils"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -17,20 +20,15 @@ import (
 )
 
 func GetBlockByBlockNumber(client *ethclient.Client, blockNumber *big.Int) (*types.Block, error) {
-	block, err := client.BlockByNumber(context.Background(), blockNumber)
+	ctx, cancel := context_utils.CreateTimeoutContext(5 * time.Second)
+	defer cancel()
+
+	block, err := client.BlockByNumber(ctx, blockNumber)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve block: %v", err)
 	}
 
 	return block, nil
-}
-
-func InitEthereumClient() (*ethclient.Client, error) {
-	client, err := ethclient.Dial("https://mainnet.infura.io/v3/afd3d007db6f48fb946468a2877b5151")
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Ethereum client: %w", err)
-	}
-	return client, nil
 }
 
 func getTransactionData(trans *types.Transaction) *transactions.TransactionsType {
@@ -63,56 +61,105 @@ func getTransactionData(trans *types.Transaction) *transactions.TransactionsType
 	}
 }
 
-func CheckNewBlock(mongodb *mongo.Client) (*ethclient.Client, error) {
-	client, _ := InitEthereumClient()
+func CheckNewBlock() error {
+	client, err := ethereum.GetClientEthereum()
+	if err != nil {
+		return fmt.Errorf("error initializing Ethereum client: %v", err)
+	}
+
+	collectionAddresses, err := mongodb.GetCollection("mydatabase", "addresses")
+	if err != nil {
+		return fmt.Errorf("error getting collection: %v", err)
+	}
+
+	collectionTransaction, err := mongodb.GetCollection("mydatabase", "transaction")
+	if err != nil {
+		return fmt.Errorf("error getting collection: %v", err)
+	}
+
+	ctx, cancel := context_utils.CreateTimeoutContext(5 * time.Second)
+	defer cancel()
+
 	var lastBlockNumber *big.Int
-	collectionAddresses := mongodb.Database("mydatabase").Collection("addresses")
-	collectionTransaction := mongodb.Database("mydatabase").Collection("transaction")
 
 	for {
-		currentBlockNumber, err := client.BlockNumber(context.Background())
+		currentBlockNumber, err := client.BlockNumber(ctx)
 		if err != nil {
-			log.Fatalf("Failed to retrieve block number: %v", err)
+			return fmt.Errorf("failed to retrieve block number: %v", err)
 		}
-		if lastBlockNumber == nil || currentBlockNumber > lastBlockNumber.Uint64() {
-			var addresses []string
-			cursor, err := collectionAddresses.Find(context.Background(), bson.M{})
-			if err != nil {
-				log.Fatalf("Failed to find documents: %v", err)
-			}
-			for cursor.Next(context.Background()) {
-				var address struct {
-					Address string `bson:"address"`
-				}
-				if err := cursor.Decode(&address); err != nil {
-					log.Fatalf("Failed to decode document: %v", err)
-				}
 
-				addresses = append(addresses, address.Address)
+		if lastBlockNumber == nil || currentBlockNumber > lastBlockNumber.Uint64() {
+			addresses, err := getAddresses(ctx, collectionAddresses)
+			if err != nil {
+				return err
 			}
-			set := make(map[string]struct{})
-			for _, id := range addresses {
-				set[id] = struct{}{}
+
+			addressSet := make(map[string]struct{})
+			for _, address := range addresses {
+				addressSet[address] = struct{}{}
 			}
+
 			lastBlockNumber = big.NewInt(int64(currentBlockNumber))
-			block, _ := GetBlockByBlockNumber(client, lastBlockNumber)
-			transactions := block.Transactions()
-			for _, item := range transactions {
-				if item != nil {
-					transaction := getTransactionData(item)
-					var err error
-					if _, exists := set[transaction.From]; exists {
-						_, err = collectionTransaction.InsertOne(context.Background(), transaction)
-					}
-					if _, exists := set[transaction.To]; exists {
-						_, err = collectionTransaction.InsertOne(context.Background(), transaction)
-					}
-					if err != nil {
-						log.Fatalf("Failed to decode document: %v", err)
-					}
-				}
+
+			block, err := GetBlockByBlockNumber(client, lastBlockNumber)
+			if err != nil {
+				return fmt.Errorf("failed to get block: %v", err)
+			}
+
+			err = processTransactions(ctx, block, addressSet, collectionTransaction)
+			if err != nil {
+				return fmt.Errorf("failed to process transactions: %v", err)
 			}
 		}
+
 		time.Sleep(5 * time.Second)
 	}
+}
+
+func getAddresses(ctx context.Context, collection *mongo.Collection) ([]string, error) {
+	var addresses []string
+	cursor, err := collection.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to find documents: %v", err)
+	}
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var address struct {
+			Address string `bson:"address"`
+		}
+		if err := cursor.Decode(&address); err != nil {
+			return nil, fmt.Errorf("failed to decode document: %v", err)
+		}
+		addresses = append(addresses, address.Address)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error: %v", err)
+	}
+
+	return addresses, nil
+}
+
+func processTransactions(ctx context.Context, block *types.Block, addressSet map[string]struct{}, collection *mongo.Collection) error {
+	transactions := block.Transactions()
+	for _, item := range transactions {
+		if item == nil {
+			continue
+		}
+
+		transaction := getTransactionData(item)
+		var err error
+
+		if _, exists := addressSet[transaction.From]; exists {
+			_, err = collection.InsertOne(ctx, transaction)
+		}
+		if _, exists := addressSet[transaction.To]; exists {
+			_, err = collection.InsertOne(ctx, transaction)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to insert transaction: %v", err)
+		}
+	}
+	return nil
 }

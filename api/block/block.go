@@ -1,24 +1,29 @@
 package block
 
 import (
-	"context"
 	"log"
 	"math/big"
 	"net/http"
+	"time"
 
+	"golang-interview-exercise/ethereum"
 	"golang-interview-exercise/utils"
+	"golang-interview-exercise/utils/context_utils"
 
 	"github.com/labstack/echo/v4"
 )
 
 func GetCurrentBlock(c echo.Context) error {
-	client, err := utils.InitEthereumClient()
+	client, err := ethereum.GetClientEthereum()
 	if err != nil {
 		log.Printf("Error initializing Ethereum client: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Unable to connect to Ethereum client")
 	}
 
-	blockNumber, err := client.BlockNumber(context.Background())
+	ctx, cancel := context_utils.CreateTimeoutContext(5 * time.Second)
+	defer cancel()
+
+	blockNumber, err := client.BlockNumber(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Failed to retrieve latest block number")
 	}
@@ -29,11 +34,10 @@ func GetCurrentBlock(c echo.Context) error {
 	}
 
 	transaction := block.Transactions()
-	transactionCount := len(transaction)
 
 	blockData := map[string]interface{}{
 		"block_number":      blockNumber,
-		"transaction_count": transactionCount,
+		"transaction_count": len(transaction),
 		"transaction":       transaction,
 	}
 
