@@ -48,18 +48,18 @@ func getTransactionData(trans *types.Transaction) *transactions.TransactionsType
 	to := trans.To()
 	if to != nil {
 		return &transactions.TransactionsType{
-			Hash:     trans.Hash().Hex(),
-			Nonce:    trans.Nonce(),
-			From:     sender.Hex(),
-			To:       trans.To().String(),
+			Hash:  trans.Hash().Hex(),
+			Nonce: trans.Nonce(),
+			From:  sender.Hex(),
+			To:    trans.To().String(),
 		}
 	}
 
 	return &transactions.TransactionsType{
-		Hash:     trans.Hash().Hex(),
-		Nonce:    trans.Nonce(),
-		From:     sender.Hex(),
-		To:       "",
+		Hash:  trans.Hash().Hex(),
+		Nonce: trans.Nonce(),
+		From:  sender.Hex(),
+		To:    "",
 	}
 }
 
@@ -102,10 +102,10 @@ func CheckNewBlock(mongodb *mongo.Client) (*ethclient.Client, error) {
 					transaction := getTransactionData(item)
 					var err error
 					if _, exists := set[transaction.From]; exists {
-						_,err = collectionTransaction.InsertOne(context.Background(),transaction)
+						_, err = collectionTransaction.InsertOne(context.Background(), transaction)
 					}
 					if _, exists := set[transaction.To]; exists {
-						_,err = collectionTransaction.InsertOne(context.Background(),transaction)
+						_, err = collectionTransaction.InsertOne(context.Background(), transaction)
 					}
 					if err != nil {
 						log.Fatalf("Failed to decode document: %v", err)

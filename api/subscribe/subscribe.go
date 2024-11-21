@@ -14,7 +14,7 @@ func PostSubscribe(c echo.Context) error {
 
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body")
-	}	
+	}
 	if req.Address == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "Address notfound")
 	}
@@ -22,8 +22,8 @@ func PostSubscribe(c echo.Context) error {
 	mongodb := c.Get("mongodb").(*mongo.Client)
 
 	collection := mongodb.Database("mydatabase").Collection("addresses")
-	
-    var searchAddress SubscribeRequestBody
+
+	var searchAddress SubscribeRequestBody
 	collection.FindOne(context.Background(), bson.M{"address": req.Address}).Decode(&searchAddress)
 
 	if searchAddress.Address != "" {

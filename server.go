@@ -17,15 +17,15 @@ func main() {
 	e := echo.New()
 
 	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-    client, err := mongo.Connect(context.TODO(), clientOptions)
-    if err != nil {
-        log.Fatal(err)
-    }
+	client, err := mongo.Connect(context.TODO(), clientOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	err = client.Ping(context.TODO(), nil)
-    if err != nil {
-        log.Fatal(err)
-    }
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -33,7 +33,6 @@ func main() {
 			return next(c)
 		}
 	})
-
 
 	if err := api.RegisterAPI(e); err != nil {
 		fmt.Println("Error register api: %w", err)
